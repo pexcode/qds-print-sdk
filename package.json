@@ -1,11 +1,11 @@
 {
   "name": "@pexcode/qds-print-sdk",
-  "version": "2.2.1",
+  "version": "2.3.2",
   "description": "This is a TypeScript library published under an pexcode to help users and developers to use quickdeliverysystem print.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "module": "dist/index.js",
-  "type": "module", 
+  "type": "module",
   "exports": {
     ".": {
       "import": "./dist/index.js",
@@ -25,12 +25,13 @@
     "prepare": "npm run clean && npm run build"
   },
   "devDependencies": {
-    "typescript": "^5.3.0",
-    "@types/node": "^20.5.0",
-    "undici-types": "^5.1.0",
     "@types/jsbarcode": "^3.11.3",
+    "@types/node": "^20.19.22",
     "@types/qrcode": "^1.5.4",
-    "rimraf": "^6.0.1"
+    "rimraf": "^6.0.1",
+    "tsup": "^8.5.0",
+    "typescript": "^5.3.0",
+    "undici-types": "^5.1.0"
   },
   "dependencies": {
     "jsbarcode": "^3.11.6",
