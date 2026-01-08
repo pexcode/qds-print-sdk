@@ -36,8 +36,7 @@ This is a library published under an pexcode to help users and developers to use
 ### let data={the package data }
 
 import QDSPrint from "@pexcode/qds-print-sdk";
-const domain="https://yourdomain.com"
-const printer = new QDSPrint(domain);
+const printer = new QDSPrint();
 
 printer.print({
   id: "123456",

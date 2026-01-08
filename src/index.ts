@@ -30,7 +30,6 @@ type PrintData = {
 }
 
 type QRResult = {
-  barcode: string;
   track: string;
 }
 
@@ -38,10 +37,6 @@ type QRResult = {
  * QDSPrint SDK – handles generation and printing of delivery labels with QR codes and barcodes.
  */
 export default class QDSPrint {
-  private trackURL: string = "https://example.com"
-  constructor(domain: string) {
-    this.trackURL = domain
-  }
   /**
    * Builds QR and barcode, injects the HTML into an iframe, and triggers the print dialog.
    */
@@ -51,14 +46,11 @@ export default class QDSPrint {
 
   async print(data: PrintData): Promise<void> {
     const qc = new QR();
-    const qr: QRResult = { barcode: "", track: "" };
+    const qr: QRResult = { track: "" };
 
     try {
-      // Generate barcode (sync)
-      qr.barcode = qc.barBuild(data.id);
-
       // Generate QR code (async)
-      qr.track = await qc.qrBuild(`${this.trackURL}?uuid=${data.uuid}`);
+      qr.track = await qc.qrBuild(`${data.id}`);
 
       // Find iframe for printing
       const iframe = document.getElementById("printf") as HTMLIFrameElement | null;
@@ -150,7 +142,7 @@ export default class QDSPrint {
       </div>
 
       <div class="barcode-section">
-        <img src="${qr.barcode}" style="width:250px;height:90px;" />
+        ${data.id}
       </div>
     </div>
   </body>
