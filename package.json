@@ -1,10 +1,13 @@
 {
   "name": "@pexcode/qds-print-sdk",
-  "version": "2.4.2",
-  "description": "This is a TypeScript library published under an pexcode to help users and developers to use quickdeliverysystem print.",
+  "version": "2.5.2",
+  "description": "SDK for printing shipping labels with QR codes , This is a TypeScript library published under an pexcode to help users and developers to use quickdeliverysystem print.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "module": "dist/index.js",
+  "files": [
+    "dist"
+  ],
   "type": "module",
   "exports": {
     ".": {
@@ -22,7 +25,8 @@
     "build:types": "tsc --emitDeclarationOnly",
     "build": "tsc",
     "clean": "rimraf dist",
-    "prepare": "npm run clean && npm run build"
+    "prepare": "npm run clean && npm run build",
+    "push": "npm publish --access public"
   },
   "devDependencies": {
     "@types/jsbarcode": "^3.11.3",
@@ -38,12 +42,11 @@
     "qrcode": "^1.5.4"
   },
   "keywords": [
-    "qrcode",
-    "barcode",
     "printing",
-    "typescript",
-    "sdk",
+    "qds-print",
     "pexcode",
-    "quickdeliverysystem"
+    "quickdeliverysystem",
+    "shipping",
+    "label"
   ]
 }
