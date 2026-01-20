@@ -36,7 +36,6 @@ This is a library published under an pexcode to help users and developers to use
 ### let data={the package data }
 
 import QDSPrint from "@pexcode/qds-print-sdk";
-
 const printer = new QDSPrint();
 
 printer.print({
@@ -54,6 +53,23 @@ printer.print({
   }
 });
  
+
+ ### or print bulk
+
+ printer.printBulk([{
+  id: "123456",
+  uuid: "abcd-efgh-ijkl",
+  dest_name: "John Doe",
+  dest_address: "123 Main St, Paris",
+  sender_name: "Jane Smith",
+  sender_address: "45 Rue de Lyon, Paris",
+  created_at: new Date().toISOString(),
+  shipping: {
+    name: "QDS Warehouse",
+    address: "456 Route de Lille, France",
+    id: "WH-001"
+  }
+}]);
 ```
 
  

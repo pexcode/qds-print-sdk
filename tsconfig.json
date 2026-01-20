@@ -1,13 +1,14 @@
 {
   "compilerOptions": {
-    "target": "ES2019",
-    "module": "ESNext",
+    "target": "ESNext",
+    "module": "ESNext",           // critical for ESM output
+    "moduleResolution": "Bundler",// browser-friendly resolution
+    "declaration": true,
+    "outDir": "dist",
     "strict": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
-    "skipLibCheck": true,
-    "declaration": true,
-    "outDir": "dist"
+    "skipLibCheck": true
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*", "index.ts", "QR-code.ts"]
 }

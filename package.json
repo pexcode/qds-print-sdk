@@ -1,46 +1,52 @@
 {
   "name": "@pexcode/qds-print-sdk",
-  "version": "2.2.0",
-  "description": "This is a TypeScript library published under an pexcode to help users and developers to use quickdeliverysystem print.",
+  "version": "2.5.2",
+  "description": "SDK for printing shipping labels with QR codes , This is a TypeScript library published under an pexcode to help users and developers to use quickdeliverysystem print.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "module": "dist/index.js",
   "files": [
     "dist"
   ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
   "publishConfig": {
     "access": "public"
   },
   "author": "Mussab Muhaimeed",
   "license": "MIT",
   "scripts": {
-    "build": "tsc && webpack",
+    "build:types": "tsc --emitDeclarationOnly",
+    "build": "tsc",
     "clean": "rimraf dist",
-    "prepare": "npm run clean && npm run build"
+    "prepare": "npm run clean && npm run build",
+    "push": "npm publish --access public"
   },
   "devDependencies": {
-    "@babel/core": "^7.25.8",
-    "@babel/preset-env": "^7.25.8",
-    "@babel/preset-typescript": "^7.25.7",
     "@types/jsbarcode": "^3.11.3",
-    "@types/node": "^22.7.5",
+    "@types/node": "^20.19.22",
     "@types/qrcode": "^1.5.4",
-    "babel-loader": "^9.2.1",
     "rimraf": "^6.0.1",
-    "typescript": "^5.6.3",
-    "webpack": "^5.95.0",
-    "webpack-cli": "^5.1.4"
+    "tsup": "^8.5.0",
+    "typescript": "^5.3.0",
+    "undici-types": "^5.1.0"
   },
   "dependencies": {
     "jsbarcode": "^3.11.6",
     "qrcode": "^1.5.4"
   },
   "keywords": [
-    "qrcode",
-    "barcode",
     "printing",
-    "typescript",
-    "sdk",
+    "qds-print",
     "pexcode",
-    "quickdeliverysystem"
+    "quickdeliverysystem",
+    "shipping",
+    "label"
   ]
 }

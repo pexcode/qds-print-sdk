@@ -1,8 +1,5 @@
 import QR from "./QR-code";
 
-const trackURL = "https://track.quickdeliverysystem.com/";
-
-
 function subStringDate(value: string): string {
   return new Date(value).toLocaleString("fr", {
     day: "2-digit",
@@ -33,122 +30,186 @@ type PrintData = {
 }
 
 type QRResult = {
-  barcode: string;
-  track: string;
+  id: string;
+  qr: string;
 }
 
 /**
- * QDSPrint SDK – handles generation and printing of delivery labels with QR codes and barcodes.
+ * QDSPrint SDK – handles generation and printing of delivery labels.
  */
 export default class QDSPrint {
+  private qrService = new QR();
+
   /**
-   * Builds QR and barcode, injects the HTML into an iframe, and triggers the print dialog.
+   * Print multiple labels in a single print job.
    */
-  async print(data: PrintData): Promise<void> {
-    const qc = new QR();
-    const qr: QRResult = { barcode: "", track: "" };
+  async printBulk(data: PrintData[]): Promise<void> {
+    if (!data.length) {
+      console.warn("printBulk called with empty data");
+      return;
+    }
 
     try {
-      // Generate barcode (sync)
-      qr.barcode = qc.barBuild(data.id);
-
-      // Generate QR code (async)
-      qr.track = await qc.qrBuild(`${trackURL}?uuid=${data.uuid}`);
-
-      // Find iframe for printing
-      const iframe = document.getElementById("printf") as HTMLIFrameElement | null;
-      const newWin = iframe?.contentWindow;
-      if (!newWin) {
-        console.error("Error: Iframe not found.");
-        return;
-      }
-      
-      const htmlContent = await this.html(data, qr);
-      newWin.document.write(htmlContent);
-      newWin.document.close();
-
-      // Wait for iframe to load before printing=======
-      newWin.onload = () => {
-        newWin.print();
-      };
-    } catch (err) {
-      console.error("Error during printing:", err);
+      const qrList = await this.buildQRs(data);
+      await this.renderAndPrint(data, qrList);
+    } catch (error) {
+      console.error("Bulk print failed:", error);
     }
+  }
+
+  /**
+   * Print a single label.
+   */
+  async print(data: PrintData): Promise<void> {
+    try {
+      const qrList = await this.buildQRs([data]);
+      await this.renderAndPrint([data], qrList);
+    } catch (error) {
+      console.error("Single print failed:", error);
+    }
+  }
+
+  /**
+   * Generate QR codes in parallel.
+   */
+  private async buildQRs(data: PrintData[]): Promise<QRResult[]> {
+    return Promise.all(
+      data.map(async (item) => ({
+        id: item.id,
+        qr: await this.qrService.qrBuild(item.id),
+      }))
+    );
+  }
+
+  /**
+   * Writes HTML to iframe and triggers printing.
+   */
+  private async renderAndPrint(
+    data: PrintData[],
+    qrList: QRResult[]
+  ): Promise<void> {
+    const iframe = document.getElementById("printf") as HTMLIFrameElement | null;
+
+    if (!iframe?.contentWindow) {
+      throw new Error("Print iframe not found");
+    }
+
+    const html = await this.html(data, qrList);
+    const win = iframe.contentWindow;
+
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+
+    win.onload = () => win.print();
   }
 
   /**
    * Generates the printable HTML layout.
    */
-  private async html(data: PrintData, qr: QRResult): Promise<string> {
+  private async html(
+    data: PrintData[],
+    qrList: QRResult[]
+  ): Promise<string> {
     return `<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>QuickDeliverySystem - Label</title>
-    <style>
-      .container {
-        width: 600px;
-        border: 1px solid black;
-        margin: 0 auto;
-        padding: 1rem;
-        display: flex;
-        flex-direction: column;
-        font-family: sans-serif;
-      }
-      .header,
-      .content,
-      .barcode-section {
-        padding: 0.5rem;
-        border-bottom: 1px solid lightgray;
-      }
-      .header { text-align: center; }
-      .content { display: flex; flex-direction: row; }
-      .left-section, .right-section { flex: 1; }
-      .barcode-section { text-align: center; }
-      .barcode-section img { width: 100%; }
-      .footer { text-align: center; }
-    </style>
-  </head>
-  <body>
+      <html lang="en">
+      <head>
+      <meta charset="UTF-8" />
+      <title>QuickDeliverySystem - Labels</title>
+      <style>
+        body {
+          font-family: Arial, sans-serif;
+        }
+        .container {
+          width: 600px;
+          border: 1px solid #000;
+          margin: 0 auto 24px auto;
+          padding: 16px;
+          page-break-after: always;
+        }
+        .header {
+          text-align: center;
+          font-size: 12px;
+          margin-bottom: 8px;
+        }
+        .content {
+          display: flex;
+          justify-content: space-between;
+          border-top: 1px solid #ccc;
+          padding-top: 8px;
+          margin-top: 8px;
+        }
+        .left-section, .right-section {
+          width: 48%;
+        }
+        h2 {
+          font-size: 14px;
+          margin-bottom: 4px;
+        }
+        .barcode-section {
+          text-align: center;
+          margin-top: 12px;
+          font-weight: bold;
+          letter-spacing: 2px;
+        }
+      </style>
+      </head>
+      <body>
+      ${this.body(data, qrList)}
+      </body>
+      </html>`;
+  }
+
+  /**
+   * Builds label body.
+   */
+  private body(
+    printList: PrintData[],
+    qrList: QRResult[]
+  ): string {
+    return printList
+      .map((item) => {
+        const qr = qrList.find((x) => x.id === item.id)?.qr ?? "";
+
+        return `
     <div class="container">
       <div class="header">
-        <p>Printed at: ${new Date().toLocaleString()} by quickdeliverysystem.com</p>
+        Printed at ${new Date().toLocaleString()} — quickdeliverysystem.com
       </div>
 
       <div class="content">
         <div class="left-section">
           <h2>SHIP TO</h2>
-          <b>${data.dest_name}</b>
-          <p>${data.dest_address}</p>
-          <p>ID: ${data.uuid}</p>
+          <strong>${item.dest_name}</strong>
+          <p>${item.dest_address}</p>
+          <p>ID: ${item.uuid}</p>
         </div>
         <div class="right-section">
-          <h2>Track Package</h2>
-          <img src="${qr.track}" style="width:160px;height:160px;" />
+          <h2>TRACK</h2>
+          <img src="${qr}" width="160" height="160" />
         </div>
       </div>
 
       <div class="content">
         <div class="left-section">
           <h2>SENDER</h2>
-          <b>${data.sender_name}</b>
-          <p>${data.sender_address}</p>
-          <p>Date: ${subStringDate(data.created_at)}</p>
+          <strong>${item.sender_name}</strong>
+          <p>${item.sender_address}</p>
+          <p>Date: ${subStringDate(item.created_at)}</p>
         </div>
         <div class="right-section">
           <h2>PROCESS</h2>
-          <b>${data.shipping.name}</b>
-          <p>${data.shipping.address}</p>
-          <p>ID: ${data.shipping.id}</p>
+          <strong>${item.shipping.name}</strong>
+          <p>${item.shipping.address}</p>
+          <p>ID: ${item.shipping.id}</p>
         </div>
       </div>
 
       <div class="barcode-section">
-        <img src="${qr.barcode}" style="width:250px;height:90px;" />
+        ${item.id}
       </div>
-    </div>
-  </body>
-</html>`;
+    </div>`;
+      })
+      .join("");
   }
 }
