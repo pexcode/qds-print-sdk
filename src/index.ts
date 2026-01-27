@@ -24,7 +24,7 @@ type PrintData = {
   dest_name: string;
   dest_address: string;
   sender_name: string;
-  sender_address: string;
+  sender_address?: string;
   created_at: string;
   shipping: ShippingInfo;
 }
