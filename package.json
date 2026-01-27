@@ -1,6 +1,6 @@
 {
   "name": "@pexcode/qds-print-sdk",
-  "version": "2.5.2",
+  "version": "2.5.3",
   "description": "SDK for printing shipping labels with QR codes , This is a TypeScript library published under an pexcode to help users and developers to use quickdeliverysystem print.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
