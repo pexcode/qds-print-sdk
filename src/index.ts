@@ -1,215 +1,175 @@
-import QR from "./QR-code";
+import type { ShippingLabel } from "./types/label";
+import { printA4Labels } from "./a4-printer";
+import { printLabelsViaService } from "./print-service/print-labels";
+import type { PrintServiceConfig } from "./print-service/types";
+import type { PaperType } from "./types/print";
 
-function subStringDate(value: string): string {
-  return new Date(value).toLocaleString("fr", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour12: true,
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
+export type { ShippingLabel } from "./types/label";
+export * from "./a4-printer";
+export { buildA4LabelHtml, buildA4BulkHtml } from "./a4-label";
+export * from "./print-service";
+export type { PaperType } from "./types/print";
+export { PAPER_SERVICE_MAP } from "./types/print";
 
-/** Shipment and printing data types */
-type ShippingInfo = {
+export type ShippingInfo = {
   name: string;
   address: string;
   id: string;
-}
+};
 
-type PrintData = {
+export type PrintData = {
   id: string;
   uuid: string;
-  dest_name: string;
-  dest_address: string;
-  sender_name: string;
-  sender_address?: string;
-  created_at: string;
-  shipping: ShippingInfo;
-}
+  recipientName: string;
+  recipientAddress: string;
+  recipientCity?: string;
+  senderName: string;
+  senderAddress?: string;
+  createdAt: string;
+  shippingInfo: ShippingInfo;
+  companyLogoUrl?: string;
+};
 
-type QRResult = {
-  id: string;
-  qr: string;
-}
+export type QDSPrintOptions = {
+  /** Paper format (default: A4). */
+  paperType?: PaperType;
+  /**
+   * When set, prints silently via the local print service
+   * (e.g. http://localhost:4510) instead of window.print().
+   */
+  printService?: PrintServiceConfig;
+};
 
 /**
  * QDSPrint SDK – handles generation and printing of delivery labels.
  */
 export default class QDSPrint {
-  private qrService = new QR();
+  private printerName: string;
+  private paperType: PaperType;
+  private printService?: PrintServiceConfig;
 
   /**
-   * Print multiple labels in a single print job.
+   * @param printerName Printer name for print-service. Optional for browser A4.
+   * @param options paperType and/or printService config. Pass PaperType string for shorthand.
    */
+  constructor(printerName = "", options: QDSPrintOptions | PaperType = "A4") {
+    this.printerName = printerName;
+
+    const resolved = typeof options === "string" ? { paperType: options } : options;
+    this.paperType = resolved.paperType ?? "A4";
+    this.printService = resolved.printService;
+
+    if (this.printService && !this.printService.printer && printerName) {
+      this.printService = { ...this.printService, printer: printerName };
+    }
+  }
+
+  getPaperType(): PaperType {
+    return this.paperType;
+  }
+
+  usesPrintService(): boolean {
+    return Boolean(this.printService?.baseUrl);
+  }
+
+  async print(data: PrintData): Promise<void> {
+    if (this.printService) {
+      await this.printViaService(data);
+      return;
+    }
+    await this.printBrowser(data);
+  }
+
   async printBulk(data: PrintData[]): Promise<void> {
-    if (!data.length) {
-      console.warn("printBulk called with empty data");
+    if (this.printService) {
+      await this.printViaServiceBulk(data);
+      return;
+    }
+    await this.printBrowserBulk(data);
+  }
+
+  async printBrowser(data: PrintData): Promise<void> {
+    if (this.paperType === "LABEL_100x150") {
+      const { buildLabel100x150BulkHtml } = await import("./print-service/label-100x150");
+      const { printHtmlDocument } = await import("./browser-print");
+      const html = await buildLabel100x150BulkHtml([this.toLabel(data)]);
+      await printHtmlDocument(html, 100, 150);
+      return;
+    }
+    await printA4Labels([this.toLabel(data)]);
+  }
+
+  /** @deprecated Use printBrowser */
+  async printA4(data: PrintData): Promise<void> {
+    await this.printBrowser(data);
+  }
+
+  async printBrowserBulk(data: PrintData[]): Promise<void> {
+    if (!data.length) return;
+
+    if (this.paperType === "LABEL_100x150") {
+      const { buildLabel100x150BulkHtml } = await import("./print-service/label-100x150");
+      const { printHtmlDocument } = await import("./browser-print");
+      const html = await buildLabel100x150BulkHtml(data.map((d) => this.toLabel(d)));
+      await printHtmlDocument(html, 100, 150);
       return;
     }
 
-    try {
-      const qrList = await this.buildQRs(data);
-      await this.renderAndPrint(data, qrList);
-    } catch (error) {
-      console.error("Bulk print failed:", error);
+    await printA4Labels(data.map((item) => this.toLabel(item)));
+  }
+
+  /** @deprecated Use printBrowserBulk */
+  async printA4Bulk(data: PrintData[]): Promise<void> {
+    await this.printBrowserBulk(data);
+  }
+
+  async printViaService(data: PrintData): Promise<void> {
+    const config = this.requirePrintService();
+    await printLabelsViaService(config, this.paperType, [this.toLabel(data)]);
+  }
+
+  async printViaServiceBulk(data: PrintData[]): Promise<void> {
+    if (!data.length) return;
+    const config = this.requirePrintService();
+    await printLabelsViaService(config, this.paperType, data.map((d) => this.toLabel(d)));
+  }
+
+  private requirePrintService(): PrintServiceConfig {
+    if (!this.printService?.baseUrl) {
+      throw new Error("printService.baseUrl is required (e.g. http://localhost:4510)");
     }
+    return this.printService;
   }
 
-  /**
-   * Print a single label.
-   */
-  async print(data: PrintData): Promise<void> {
-    try {
-      const qrList = await this.buildQRs([data]);
-      await this.renderAndPrint([data], qrList);
-    } catch (error) {
-      console.error("Single print failed:", error);
-    }
+  private toLabel(data: PrintData): ShippingLabel {
+    return {
+      id: data.id,
+      uuid: data.uuid,
+      recipientName: data.recipientName,
+      recipientAddress: data.recipientAddress,
+      recipientCity: data.recipientCity,
+      senderName: data.senderName,
+      senderAddress: data.senderAddress,
+      shippingName: data.shippingInfo.name,
+      shippingAddress: data.shippingInfo.address,
+      shippingId: data.shippingInfo.id,
+      companyLogoUrl: data.companyLogoUrl,
+      qrData: data.id,
+      createdAtText: this.formatCreatedAt(data.createdAt),
+    };
   }
 
-  /**
-   * Generate QR codes in parallel.
-   */
-  private async buildQRs(data: PrintData[]): Promise<QRResult[]> {
-    return Promise.all(
-      data.map(async (item) => ({
-        id: item.id,
-        qr: await this.qrService.qrBuild(item.id),
-      }))
-    );
-  }
-
-  /**
-   * Writes HTML to iframe and triggers printing.
-   */
-  private async renderAndPrint(
-    data: PrintData[],
-    qrList: QRResult[]
-  ): Promise<void> {
-    const iframe = document.getElementById("printf") as HTMLIFrameElement | null;
-
-    if (!iframe?.contentWindow) {
-      throw new Error("Print iframe not found");
-    }
-
-    const html = await this.html(data, qrList);
-    const win = iframe.contentWindow;
-
-    win.document.open();
-    win.document.write(html);
-    win.document.close();
-
-    win.onload = () => win.print();
-  }
-
-  /**
-   * Generates the printable HTML layout.
-   */
-  private async html(
-    data: PrintData[],
-    qrList: QRResult[]
-  ): Promise<string> {
-    return `<!DOCTYPE html>
-      <html lang="en">
-      <head>
-      <meta charset="UTF-8" />
-      <title>QuickDeliverySystem - Labels</title>
-      <style>
-        body {
-          font-family: Arial, sans-serif;
-        }
-        .container {
-          width: 600px;
-          border: 1px solid #000;
-          margin: 0 auto 24px auto;
-          padding: 16px;
-          page-break-after: always;
-        }
-        .header {
-          text-align: center;
-          font-size: 12px;
-          margin-bottom: 8px;
-        }
-        .content {
-          display: flex;
-          justify-content: space-between;
-          border-top: 1px solid #ccc;
-          padding-top: 8px;
-          margin-top: 8px;
-        }
-        .left-section, .right-section {
-          width: 48%;
-        }
-        h2 {
-          font-size: 14px;
-          margin-bottom: 4px;
-        }
-        .barcode-section {
-          text-align: center;
-          margin-top: 12px;
-          font-weight: bold;
-          letter-spacing: 2px;
-        }
-      </style>
-      </head>
-      <body>
-      ${this.body(data, qrList)}
-      </body>
-      </html>`;
-  }
-
-  /**
-   * Builds label body.
-   */
-  private body(
-    printList: PrintData[],
-    qrList: QRResult[]
-  ): string {
-    return printList
-      .map((item) => {
-        const qr = qrList.find((x) => x.id === item.id)?.qr ?? "";
-
-        return `
-    <div class="container">
-      <div class="header">
-        Printed at ${new Date().toLocaleString()} — quickdeliverysystem.com
-      </div>
-
-      <div class="content">
-        <div class="left-section">
-          <h2>SHIP TO</h2>
-          <strong>${item.dest_name}</strong>
-          <p>${item.dest_address}</p>
-          <p>ID: ${item.uuid}</p>
-        </div>
-        <div class="right-section">
-          <h2>TRACK</h2>
-          <img src="${qr}" width="160" height="160" />
-        </div>
-      </div>
-
-      <div class="content">
-        <div class="left-section">
-          <h2>SENDER</h2>
-          <strong>${item.sender_name}</strong>
-          <p>${item.sender_address}</p>
-          <p>Date: ${subStringDate(item.created_at)}</p>
-        </div>
-        <div class="right-section">
-          <h2>PROCESS</h2>
-          <strong>${item.shipping.name}</strong>
-          <p>${item.shipping.address}</p>
-          <p>ID: ${item.shipping.id}</p>
-        </div>
-      </div>
-
-      <div class="barcode-section">
-        ${item.id}
-      </div>
-    </div>`;
-      })
-      .join("");
+  private formatCreatedAt(value: string): string | undefined {
+    if (!value) return undefined;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return undefined;
+    return date.toLocaleString("fr", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour12: true,
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   }
 }
