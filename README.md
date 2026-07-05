@@ -2,7 +2,11 @@
 
 **pexcode.com** · **quickdeliverysystem.com**
 
-TypeScript SDK for printing Quick Delivery System shipping labels to thermal printers using **QZ Tray** and **ESC/POS** commands. Labels include recipient/sender/shipping details, a scannable QR code, and formatted date.
+TypeScript SDK for printing Quick Delivery System shipping labels via **browser print dialog** or a **local print service** (silent print).
+
+Supported formats:
+- **A4** — full-page shipping document
+- **LABEL_100x150** — 100×150 mm thermal label (RTL Arabic, barcode + QR)
 
 ---
 
@@ -12,78 +16,108 @@ TypeScript SDK for printing Quick Delivery System shipping labels to thermal pri
 npm i @pexcode/qds-print-sdk
 ```
 
-or
-
-```bash
-npm i --save @pexcode/qds-print-sdk
-```
-
 ---
 
 ## Requirements
 
-- **QZ Tray** must be installed and running on the machine (download from [qz.io](https://qz.io)).
-- A thermal printer (58mm or 80mm) configured and available to QZ Tray.
+**Browser print (default)** — runs in the browser. `window.print()` opens the system dialog.
+
+**Print service (silent print)** — local HTTP service (default `http://localhost:4510`):
+- `GET /printers` — list installed printers
+- `POST /print` — send HTML, PDF, or image jobs
 
 ---
 
 ## Usage
 
-### Basic
+### Print service (silent)
+
+```ts
+import QDSPrint, { type PrintData } from "@pexcode/qds-print-sdk";
+import { getPrinters } from "@pexcode/qds-print-sdk/print-service";
+
+const printers = await getPrinters("http://localhost:4510");
+
+const printer = new QDSPrint("Zebra ZD421", {
+  paperType: "LABEL_100x150",
+  printService: {
+    baseUrl: "http://localhost:4510",
+    printer: "Zebra ZD421",
+  },
+});
+
+await printer.print(data);
+```
+
+### Browser dialog
 
 ```ts
 import QDSPrint, { type PrintData } from "@pexcode/qds-print-sdk";
 
-// printerName: exact or partial name as shown in QZ Tray
-// printerSize: "58mm" or "80mm" (default: "80mm")
-const printer = new QDSPrint("My Thermal Printer", "80mm");
-
-const data: PrintData = {
-  id: "123456",
-  uuid: "abcd-efgh-ijkl",
-  dest_name: "John Doe",
-  dest_address: "123 Main St, Paris",
-  sender_name: "Jane Smith",
-  sender_address: "45 Rue de Lyon, Paris",
-  created_at: new Date().toISOString(),
-  shipping: {
-    name: "QDS Warehouse",
-    address: "456 Route de Lille, France",
-    id: "WH-001",
-  },
-};
-
-// Single label
+const printer = new QDSPrint(); // A4 by default
 await printer.print(data);
 
-// Multiple labels (printed in sequence)
-await printer.printBulk([data, data2, data3]);
+// 100×150 label
+const label = new QDSPrint("", "LABEL_100x150");
+await label.print(data);
 ```
 
-### Printer size
+### Paper types
 
-- **`"80mm"`** (default): wider line, larger QR code.
-- **`"58mm"`**: narrower line, smaller QR for narrow rolls.
+| `paperType` | Description |
+|-------------|-------------|
+| `"A4"` (default) | Full A4 page |
+| `"LABEL_100x150"` | 100×150 mm shipping label (RTL, barcode + QR) |
+
+### PrintData
 
 ```ts
-const printer58 = new QDSPrint("My 58mm Printer", "58mm");
-const printer80 = new QDSPrint("My 80mm Printer"); // 80mm by default
+const data: PrintData = {
+  id: "123456",
+  uuid: "abcd-efgh",
+  recipientName: "John Doe",
+  recipientAddress: "123 Main St",
+  recipientCity: "Riyadh",       // optional — LABEL_100x150
+  senderName: "Jane Smith",
+  senderAddress: "45 Rue de Lyon",
+  createdAt: new Date().toISOString(),
+  shippingInfo: {
+    name: "QDS Warehouse",
+    address: "456 Route de Lille",
+    id: "WH-001",
+  },
+  companyLogoUrl: "https://...", // optional
+};
 ```
 
-### Error handling (QZ Tray not running)
+### Low-level print service API
 
 ```ts
-import QDSPrint, { QZTrayNotRunningError } from "@pexcode/qds-print-sdk";
+import { getPrinters, printJob } from "@pexcode/qds-print-sdk/print-service";
 
-const printer = new QDSPrint("My Printer", "80mm");
+await printJob("http://localhost:4510", {
+  printer: "Zebra ZD421",
+  paper: "100x150",
+  contentType: "html",
+  content: htmlString,
+});
+```
+
+See `examples/print-service-integration.ts` for Vue composable examples.
+
+### Error handling
+
+```ts
+import QDSPrint, { BrowserPrintNotAvailableError, PrintServiceError } from "@pexcode/qds-print-sdk";
 
 try {
-  await printer.print(data);
+  await new QDSPrint().print(data);
 } catch (err) {
-  if (err instanceof QZTrayNotRunningError) {
-    console.error("Start QZ Tray and try again.");
-  } else {
-    throw err;
+  if (err instanceof BrowserPrintNotAvailableError) {
+    console.error("Printing only works in a browser.");
+  }
+  if (err instanceof PrintServiceError) {
+    console.error("Print service error:", err.message);
   }
 }
 ```
@@ -92,12 +126,7 @@ try {
 
 | Type | Description |
 |------|-------------|
-| `PrintData` | Full label payload: id, uuid, dest_*, sender_*, created_at, shipping |
-| `ShippingInfo` | shipping.name, shipping.address, shipping.id |
-| `PrinterSize` | `"58mm" \| "80mm"` |
-
----
-
-## Note
-
-This package provides the **Quick Delivery System** label format and is not intended to be customized. If you need the same layout for your own system, you can still use the SDK as-is.
+| `PrintData` | Label payload |
+| `PaperType` | `"A4" \| "LABEL_100x150"` |
+| `ShippingLabel` | Normalized label used by layouts |
+| `PrintServiceConfig` | `{ baseUrl, printer?, copies? }` |

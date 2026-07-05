@@ -1,10 +1,16 @@
-import type { ThermalShippingLabel, ThermalPrinter } from "./thermal-printer";
-import { connectPrinter } from "./thermal-printer";
-export * from "./thermal-printer";
+import type { ShippingLabel } from "./types/label";
+import { printA4Labels } from "./a4-printer";
+import { printLabelsViaService } from "./print-service/print-labels";
+import type { PrintServiceConfig } from "./print-service/types";
+import type { PaperType } from "./types/print";
 
-export type PrinterSize = "58mm" | "80mm";
+export type { ShippingLabel } from "./types/label";
+export * from "./a4-printer";
+export { buildA4LabelHtml, buildA4BulkHtml } from "./a4-label";
+export * from "./print-service";
+export type { PaperType } from "./types/print";
+export { PAPER_SERVICE_MAP } from "./types/print";
 
-/** Shipment and printing data types */
 export type ShippingInfo = {
   name: string;
   address: string;
@@ -14,12 +20,24 @@ export type ShippingInfo = {
 export type PrintData = {
   id: string;
   uuid: string;
-  dest_name: string;
-  dest_address: string;
-  sender_name: string;
-  sender_address?: string;
-  created_at: string;
-  shipping: ShippingInfo;
+  recipientName: string;
+  recipientAddress: string;
+  recipientCity?: string;
+  senderName: string;
+  senderAddress?: string;
+  createdAt: string;
+  shippingInfo: ShippingInfo;
+  companyLogoUrl?: string;
+};
+
+export type QDSPrintOptions = {
+  /** Paper format (default: A4). */
+  paperType?: PaperType;
+  /**
+   * When set, prints silently via the local print service
+   * (e.g. http://localhost:4510) instead of window.print().
+   */
+  printService?: PrintServiceConfig;
 };
 
 /**
@@ -27,85 +45,125 @@ export type PrintData = {
  */
 export default class QDSPrint {
   private printerName: string;
-  private printerSize: PrinterSize;
+  private paperType: PaperType;
+  private printService?: PrintServiceConfig;
 
-  constructor(printerName: string, printerSize: PrinterSize = "80mm") {
+  /**
+   * @param printerName Printer name for print-service. Optional for browser A4.
+   * @param options paperType and/or printService config. Pass PaperType string for shorthand.
+   */
+  constructor(printerName = "", options: QDSPrintOptions | PaperType = "A4") {
     this.printerName = printerName;
-    this.printerSize = printerSize;
+
+    const resolved = typeof options === "string" ? { paperType: options } : options;
+    this.paperType = resolved.paperType ?? "A4";
+    this.printService = resolved.printService;
+
+    if (this.printService && !this.printService.printer && printerName) {
+      this.printService = { ...this.printService, printer: printerName };
+    }
   }
 
+  getPaperType(): PaperType {
+    return this.paperType;
+  }
 
-  /**
-   * Print a single label (public API).
-   * Internally uses ESC/POS thermal printing via QZ Tray.
-   */
+  usesPrintService(): boolean {
+    return Boolean(this.printService?.baseUrl);
+  }
+
   async print(data: PrintData): Promise<void> {
-    await this.printThermal(data);
+    if (this.printService) {
+      await this.printViaService(data);
+      return;
+    }
+    await this.printBrowser(data);
   }
 
-  /**
-   * Print multiple labels (public API).
-   * Internally uses ESC/POS thermal printing via QZ Tray.
-   */
   async printBulk(data: PrintData[]): Promise<void> {
-    await this.printThermalBulk(data);
+    if (this.printService) {
+      await this.printViaServiceBulk(data);
+      return;
+    }
+    await this.printBrowserBulk(data);
   }
 
-  /**
-   * Print a single label directly to a thermal printer using ESC/POS,
-   * based on the current PrintData structure.
-   */
-  async printThermal(data: PrintData): Promise<void> {
-    const printer = await connectPrinter(this.printerName);
-    const label = this.toThermalLabel(data);
-    await printer.printShippingLabel(label);
+  async printBrowser(data: PrintData): Promise<void> {
+    if (this.paperType === "LABEL_100x150") {
+      const { buildLabel100x150BulkHtml } = await import("./print-service/label-100x150");
+      const { printHtmlDocument } = await import("./browser-print");
+      const html = await buildLabel100x150BulkHtml([this.toLabel(data)]);
+      await printHtmlDocument(html, 100, 150);
+      return;
+    }
+    await printA4Labels([this.toLabel(data)]);
   }
 
-  /**
-   * Print multiple labels to a thermal printer in sequence using ESC/POS,
-   * based on the current PrintData structure.
-   */
-  async printThermalBulk(data: PrintData[]): Promise<void> {
-    if (!data.length) {
-      console.warn("printThermalBulk called with empty data");
+  /** @deprecated Use printBrowser */
+  async printA4(data: PrintData): Promise<void> {
+    await this.printBrowser(data);
+  }
+
+  async printBrowserBulk(data: PrintData[]): Promise<void> {
+    if (!data.length) return;
+
+    if (this.paperType === "LABEL_100x150") {
+      const { buildLabel100x150BulkHtml } = await import("./print-service/label-100x150");
+      const { printHtmlDocument } = await import("./browser-print");
+      const html = await buildLabel100x150BulkHtml(data.map((d) => this.toLabel(d)));
+      await printHtmlDocument(html, 100, 150);
       return;
     }
 
-    const printer: ThermalPrinter = await connectPrinter(this.printerName);
-
-    for (const item of data) {
-      const label = this.toThermalLabel(item);
-      await printer.printShippingLabel(label);
-    }
+    await printA4Labels(data.map((item) => this.toLabel(item)));
   }
 
-  /**
-   * Adapter from the existing PrintData structure to the ThermalShippingLabel
-   * used by the ESC/POS thermal printer implementation.
-   */
-  private toThermalLabel(data: PrintData): ThermalShippingLabel {
-    const is80 = this.printerSize === "80mm";
-    const lineWidth = is80 ? 48 : 32;
-    const qrModuleSize = is80 ? 6 : 4;
+  /** @deprecated Use printBrowserBulk */
+  async printA4Bulk(data: PrintData[]): Promise<void> {
+    await this.printBrowserBulk(data);
+  }
 
+  async printViaService(data: PrintData): Promise<void> {
+    const config = this.requirePrintService();
+    await printLabelsViaService(config, this.paperType, [this.toLabel(data)]);
+  }
+
+  async printViaServiceBulk(data: PrintData[]): Promise<void> {
+    if (!data.length) return;
+    const config = this.requirePrintService();
+    await printLabelsViaService(config, this.paperType, data.map((d) => this.toLabel(d)));
+  }
+
+  private requirePrintService(): PrintServiceConfig {
+    if (!this.printService?.baseUrl) {
+      throw new Error("printService.baseUrl is required (e.g. http://localhost:4510)");
+    }
+    return this.printService;
+  }
+
+  private toLabel(data: PrintData): ShippingLabel {
     return {
       id: data.id,
-      recipientName: data.dest_name,
-      recipientAddress: data.dest_address,
-      senderName: data.sender_name,
-      senderAddress: data.sender_address,
-      shippingName: data.shipping.name,
-      shippingAddress: data.shipping.address,
-      shippingId: data.shipping.id,
+      uuid: data.uuid,
+      recipientName: data.recipientName,
+      recipientAddress: data.recipientAddress,
+      recipientCity: data.recipientCity,
+      senderName: data.senderName,
+      senderAddress: data.senderAddress,
+      shippingName: data.shippingInfo.name,
+      shippingAddress: data.shippingInfo.address,
+      shippingId: data.shippingInfo.id,
+      companyLogoUrl: data.companyLogoUrl,
       qrData: data.id,
-      lineWidth,
-      qrModuleSize,
-      createdAtText: this.formatCreatedAt(data.created_at),
+      createdAtText: this.formatCreatedAt(data.createdAt),
     };
   }
 
-  private formatCreatedAt(value: string): string {
-    return new Date(value).toLocaleString("fr", {
+  private formatCreatedAt(value: string): string | undefined {
+    if (!value) return undefined;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return undefined;
+    return date.toLocaleString("fr", {
       day: "2-digit",
       month: "2-digit",
       year: "numeric",
